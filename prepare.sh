@@ -1,6 +1,6 @@
 wget https://github.com/sophgo/tpu-perf/releases/download/v1.2.17/tpu_perf-1.2.17-py3-none-manylinux2014_aarch64.whl 
 pip3 install tpu_perf-1.2.17-py3-none-manylinux2014_aarch64.whl && rm -rf tpu_perf-1.2.17-py3-none-manylinux2014_aarch64.whl
-pip3 install -r requirements.txt -i https://pypi.douban.com/simple
+pip3 install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 mkdir models
 mkdir models/basic
 python3 -m dfn --url http://disk-sophgo-vip.quickconnect.cn/sharing/iCUZMB1NF && unzip controlnet.zip && rm -rf controlnet.zip && mv controlnet models/

@@ -7,3 +7,4 @@ flask==2.2.2
 pillow
 dfn
 nasops
+flask_cors
