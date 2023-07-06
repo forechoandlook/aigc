@@ -226,6 +226,7 @@ def process_data_img():
 
     controlnet_image = None
     controlnet_name  = None
+    use_controlnet = True
     flag = True
     controlnet_args  = {}
     print("request data:", data)
@@ -235,10 +236,12 @@ def process_data_img():
                 controlnet_args = data['alwayson_scripts']['controlnet']['args'][0]
                 if "enabled" in data['alwayson_scripts']['controlnet']['args'][0]:
                     if data['alwayson_scripts']['controlnet']['args'][0]['enabled']==False:
+                        use_controlnet = False
                         controlnet_name = None
                         controlnet_image= None
                         flag = False
                     else:
+                        use_controlnet = True
                         controlnet_name = data['alwayson_scripts']['controlnet']['args'][0]['module'] # must be hed and canny 
                         flag = True
                 else:
@@ -288,6 +291,7 @@ def process_data_img():
                 seed_resize_from_h=seed_resize_from_h,
                 seed_resize_from_w=seed_resize_from_w,
                 controlnet_args = controlnet_args,
+                use_controlnet = use_controlnet,
             )
         except Exception as e:
             import traceback

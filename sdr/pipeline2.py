@@ -484,10 +484,11 @@ class StableDiffusionPipeline:
             seed_resize_from_w=0,
             controlnet_args = {},
             controlnet_weight=1.0,
+            use_controlnet = True,
             init_latents=None
     ):
         using_paint = mask is not None and using_paint#mask 不在就没有paint 
-        if self.controlnet_name and controlnet_img is None and init_image is not None:
+        if self.controlnet_name and controlnet_img is None and init_image is not None and use_controlnet:
             controlnet_img = init_image 
         # import pdb;pdb.set_trace()
         self.controlnet_args = {}
