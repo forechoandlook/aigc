@@ -10,3 +10,7 @@
 ## 额外信息 
 1. 内置了`deliberate-lora_pixarStyleLora_lora128-unet`模型，可以直接使用
 2. 项目为前后端分离，可以直接作为web和api服务使用
+
+
+## 使用更多的模型
+1. `bash get_more_model.sh` 获取更多的模型
