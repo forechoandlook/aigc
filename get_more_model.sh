@@ -1,4 +1,4 @@
-echo "Please check 'model' folder for more models."
+echo "Please check 'models' folder for more models."
 echo "the model path is in : url"
 
 mkdir models/basic/babes20
