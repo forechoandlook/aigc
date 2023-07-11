@@ -748,9 +748,6 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
 
 # sample_dpmpp_2m_sde -> model -> denoised  这里面的extra_args特别重要，不然会出很多bug
 def model_runner( discreteEpsDDPMDenoiser, guidance_scale, x, sigmas, mask=None, using_paint=False,  **extra_args):
-    # 这里面的model_runner 包括了所有的model的运行 包括 txt2img img2img
-    # 只让sigmas以及后面的extra_args放出来 需要使用
-    # 这个model要能直接运行模型 所以这一块的实现需要仔细考虑一下
     sigmas = torch.tensor([sigmas, sigmas])
     # x [1,4,64,64] -> [2,4,64,64]
     x = torch.cat([x, x], dim=0)
@@ -842,6 +839,13 @@ samplers_k_diffusion = [
 samplers_k_diffusion_dict = { i[0]:{"fn":i[1],"config":i[-1]} for i in samplers_k_diffusion}
 
 
+def setup_img2img_steps(steps,denoising_strength):
+    # steps is initial step 没乘过的
+    t_enc = int(min(denoising_strength, 0.999) * steps)
+    return steps, t_enc
+
+
+
 def sample(steps, x, 
            scheduler_name=None, 
            guidance_scale=7, 
@@ -851,17 +855,26 @@ def sample(steps, x,
            mask=None,
            init_latents_proper=None,
            using_paint=False,
-           model_partical_fn=None):
-    # 这里已经生成好x了
-    # 需要想好的是 这里要传什么数据
+           model_partical_fn=None,
+           init_steps=30,
+           strength=0.5,):
     assert(steps > 0)
     if scheduler_name not in samplers_k_diffusion_dict:
         ValueError("scheduler_name not in samplers_k_diffusion_dict")
     func = samplers_k_diffusion_dict[scheduler_name]['fn']
     config = samplers_k_diffusion_dict[scheduler_name]["config"]
-    sigmas = get_sigmas(steps,config) # 这个不知道 
+    if init_latents_proper is not None:
+        init_steps, t_enc = setup_img2img_steps(init_steps,denoising_strength=strength)
+        sigmas = get_sigmas(init_steps,config)
+        sigma_sched = sigmas[init_steps - t_enc - 1:]
+        xi = init_latents_proper + x * sigma_sched[0]
+        last_latent = xi
+        sigmas = sigma_sched
+    else:
+        sigmas = get_sigmas(steps,config)
+        x = x * sigmas[0]
+        last_latent = x
     alphas_cumprod = wrap.alphas_cumprod
-    x = x * sigmas[0]
     parameters = inspect.signature(func).parameters
     extra_params_kwargs = dict()
     model_params = dict()
@@ -875,7 +888,7 @@ def sample(steps, x,
     if 'sigma_min' in parameters:
         extra_params_kwargs['sigma_min'] = wrap_ds.sigmas[0].item()
         extra_params_kwargs['sigma_max'] = wrap_ds.sigmas[-1].item()
-    last_latent = x
+    
     model_partical_fn = model_partical_fn
     discreteEpsDDPMDenoiser = DiscreteEpsDDPMDenoiser(model_partical_fn, alphas_cumprod, True)# 如何配置model部分 TODO 
     partical_model = partial(model_runner,discreteEpsDDPMDenoiser, guidance_scale)

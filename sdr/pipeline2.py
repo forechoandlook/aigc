@@ -6,8 +6,6 @@ from tqdm import tqdm
 from .scheduler import create_random_tensors, sample, model_runner
 from PIL import Image, ImageFilter, ImageOps
 import PIL
-from functools import partial
-from packaging import version
 from .npuengine import EngineOV
 import time
 from . import masking
@@ -16,7 +14,15 @@ import torch
 from .preprocess import HEDdetector
 import math
 from . import ultimate
+import random 
+import os
 
+def seed_torch(seed=1029):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed) # 为了禁止hash随机化，使得实验可复现
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    print("set seed to:", seed)
 
 DEBUG=True
 opt_C = 4
@@ -134,6 +140,7 @@ class StableDiffusionPipeline:
 
     def _prepare_hed_image(self, image, controlnet_args={}):
         print("in hed prepross, we do not use controlnet_args")
+
         if self.hed_model is None:
             self.hed_model = EngineOV("./models/other/hed_fp16_dynamic.bmodel")
         hed = HEDdetector(self.hed_model)
@@ -220,6 +227,9 @@ class StableDiffusionPipeline:
         # 如果是rgba则转换为rgb
         if image.mode == "RGBA":
             image = image.convert("RGB")
+        # resize for controlnet, need keep controlnet image size same as init_image_shape
+        if image.size[0] != self.init_image_shape[0] or image.size[1] != self.init_image_shape[1]:
+            image = image.resize(self.init_image_shape, Image.LANCZOS)
         if "invert_image" in controlnet_args:
             if controlnet_args["invert_image"]:
                 image = ImageOps.invert(image)
@@ -487,10 +497,11 @@ class StableDiffusionPipeline:
             use_controlnet = True,
             init_latents=None
     ):
+        seed_torch(seeds[0])
+        init_steps = num_inference_steps
         using_paint = mask is not None and using_paint#mask 不在就没有paint 
         if self.controlnet_name and controlnet_img is None and init_image is not None and use_controlnet:
             controlnet_img = init_image 
-        # import pdb;pdb.set_trace()
         self.controlnet_args = {}
         tokens = self.tokenizer(
             prompt,
@@ -530,6 +541,7 @@ class StableDiffusionPipeline:
             init_timestep = num_inference_steps
         else: 
             init_latents = self._encode_image(init_image)
+            init_latents = torch.tensor(init_latents)
             init_timestep = int(num_inference_steps * strength) + 1
             init_timestep = min(init_timestep, num_inference_steps)
             num_inference_steps = init_timestep
@@ -550,7 +562,9 @@ class StableDiffusionPipeline:
                             init_latents_proper=init_latents,
                             using_paint=using_paint,
                             model_partical_fn=model_partical_fn,
-                            controlnet_weight=controlnet_weight)
+                            controlnet_weight=controlnet_weight,
+                            init_steps=init_steps,
+                            strength=strength,)
         latents = 1 / 0.18215 * latents
         image = self.vae_decoder({"input.1": latents.astype(np.float32)})[0]
         image = (image / 2 + 0.5).clip(0, 1)

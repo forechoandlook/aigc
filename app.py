@@ -11,12 +11,16 @@ import numpy as np
 # engine
 from sdr import StableDiffusionPipeline
 app = Flask(__name__, static_folder='dist/assets', static_url_path='/assets')
-TEST=bool(int(os.environ.get('TEST', 0)))
-DEVICE_ID=os.environ.get('DEVICE_ID', 0)
+TEST=False
+DEVICE_ID=os.environ.get('DEVICE_ID', 30)
 BASENAME = os.environ.get('BASENAME', 'deliberate-lora_pixarStyleLora_lora128-unet-2')
 CONTROLNET = os.environ.get('CONTROLNET', 'hed')
 RETURN_BASE64 = bool(int(os.environ.get('RETURN_BASE64', 1)))
 
+def hanle_seed(seed):
+    if seed == -1:
+        seed = random.randint(0, 2 ** 31)
+    return seed
 
 from flask_cors import CORS
 CORS(app, supports_credentials=True)
@@ -89,10 +93,10 @@ def process_data():
     seed_resize_from_h = data.get('seed_resize_from_h',1)
     seed_resize_from_w = data.get('seed_resize_from_w',1)
     # ========== #
-    # firstphase_height = data.get('firstphase_height', 0) #TODO 
-    # firstphase_width = data.get('firstphase_width', 0)   #TODO 
+    # firstphase_height = data.get('firstphase_height', 0) 
+    # firstphase_width = data.get('firstphase_width', 0)   
     # ========== #
-    n_iter = int(data.get('n_iter', 1)) #TODO 
+    n_iter = int(data.get('n_iter', 1)) 
     # override_settings = data.get('override_settings',{})
     # restore_faces = bool(data.get('restore_faces', False))
     # data 是否包含 args的参数 
@@ -100,7 +104,6 @@ def process_data():
     controlnet_name  = None
     flag = True
     controlnet_args = {}
-    print("request data:", data)
     if 'alwayson_scripts' in data:
         if "controlnet" in data['alwayson_scripts']:
             if "args" in data['alwayson_scripts']['controlnet']:
@@ -195,9 +198,9 @@ def process_data_img():
     num_inference_steps = int(data.get('steps'))
     guidance_scale = int(data.get('cfg_scale'))
     strength = float(data.get('denoising_strength'))
-    seed = int(data.get('seed'))
+    seed = hanle_seed(int(data.get('seed')))
+    
     sampler_index = data.get('sampler_index', "Euler a")
-    # data 是否包含 args的参数 
     controlnet_image = None
     init_image = None
     mask = None
@@ -229,7 +232,6 @@ def process_data_img():
     use_controlnet = True
     flag = True
     controlnet_args  = {}
-    print("request data:", data)
     if 'alwayson_scripts' in data:
         if "controlnet" in data['alwayson_scripts']:
             if "args" in data['alwayson_scripts']['controlnet']:
@@ -275,6 +277,7 @@ def process_data_img():
     with app.app_context():
         pipeline = app.config['pipeline']  # 获取 pipeline 变量
         try:
+            # import pdb;pdb.set_trace()
             pipeline.scheduler = sampler_index
             image = pipeline(
                 prompt=prompt,
