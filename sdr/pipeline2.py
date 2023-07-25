@@ -17,6 +17,10 @@ from . import ultimate
 import random 
 import os
 
+
+opt_C = 4
+opt_f = 8
+
 def seed_torch(seed=1029):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed) # 为了禁止hash随机化，使得实验可复现
@@ -24,9 +28,7 @@ def seed_torch(seed=1029):
     torch.manual_seed(seed)
     print("set seed to:", seed)
 
-DEBUG=True
-opt_C = 4
-opt_f = 8
+
 class StableDiffusionPipeline:
     def __init__(
             self,
@@ -36,34 +38,86 @@ class StableDiffusionPipeline:
             height=512,
             basic_model = "abyssorangemix2NSFW-unet-2",
             controlnet_name=None,
+            device_id=0,
             extra="",
     ):
         tokenizer = "./tokenizer"
+        extra = ""
+        self.device_id = device_id
+        self.latent_shape = (4, height//8, width//8) ### rzy revised
         self.tokenizer = CLIPTokenizer.from_pretrained(tokenizer)
         self.scheduler = scheduler
-        self.text_encoder = EngineOV("./models/basic/{}/text_encoder_1684x_f32.bmodel".format(basic_model))
-        self.unet = EngineOV("./models/basic/{}/{}unet_2_1684x_f16.bmodel".format(basic_model, extra))
-        self.latent_shape = (4,width//8,height//8)
-        self.vae_decoder = EngineOV("./models/basic/{}/{}vae_decoder_1684x_f16.bmodel".format(basic_model, extra))
-        self.vae_encoder = EngineOV("./models/basic/{}/{}vae_encoder_1684x_f16.bmodel".format(basic_model, extra))
+        self.basemodel_name = basic_model
+        self.text_encoder = EngineOV("./models/basic/{}/text_encoder_1684x_f32.bmodel".format(basic_model), device_id=self.device_id) ### rzy revised
+        # assert controlnet_name in ['hed','canny', None]
+        self.unet = EngineOV("./models/basic/{}/unet_multize.bmodel".format(basic_model, extra), device_id=self.device_id) ### rzy revised
+        self.vae_decoder = EngineOV("./models/basic/{}/{}vae_decoder_multize.bmodel".format(basic_model, extra), device_id=self.device_id) ### rzy revised
+        self.vae_encoder = EngineOV("./models/basic/{}/{}vae_encoder_multize.bmodel".format(basic_model, extra), device_id=self.device_id) ### rzy revised
         if controlnet_name:
-            self.controlnet = EngineOV("./models/controlnet/{}.bmodel".format(controlnet_name))
+            self.controlnet = EngineOV("./models/controlnet/{}.bmodel".format(controlnet_name), device_id=self.device_id) ### rzy revised
         else:
             self.controlnet = None
-        # self.tile_contorlnet = EngineOV("./models/controlnet/tile.bmodel")
-        # self.tile_controlnet_name = "tile"
-        self.controlnet_name = controlnet_name
+        self.tile_contorlnet = EngineOV("./models/controlnet/tile_multize.bmodel")
+        self.tile_controlnet_name = "tile"
+        self.controlnet_name = controlnet_name ###v rzy revised
         self.init_image_shape = (width,height)
         self._width = width
         self._height= height
-        # controlnet need
         self.hed_model = None
         self.default_args()
+        print(self.text_encoder, self.unet, self.vae_decoder, self.vae_encoder, self.controlnet)
+
+    def set_height_width(self, height, width):
+        self._height = height
+        self._width = width
+        self.init_image_shape = (width, height)
+        self.latent_shape = (4, height//8, width//8) 
 
     def default_args(self):
         self.batch_size = 1
         self.handle_masked = False
 
+    def reload_model(self, new_basic_model = "abyssorangemix2NSFW-unet-2", controlnet_name=None):
+        if not os.path.exists('./models/basic/{}'.format(new_basic_model)):
+            return 'No such model' # TODO: error handling
+        self.basemodel_name = new_basic_model
+        start_time0 = time.time()
+        del self.text_encoder
+        del self.unet
+        del self.vae_decoder
+        del self.vae_encoder
+        del self.controlnet
+        import gc;gc.collect()
+        print('release all engineov in {}'.format(time.time() - start_time0))
+        start_time = time.time()
+        self.text_encoder = EngineOV("./models/basic/{}/encoder_1684x_f32.bmodel".format(new_basic_model), device_id=self.device_id) ### rzy revised
+        print('    ============= load te in {} ============= '.format(time.time() - start_time))
+        # assert controlnet_name in ['hed','canny', None]
+        start_time = time.time()
+        self.unet = EngineOV("./models/basic/{}/unet_multize.bmodel".format(new_basic_model, ""), device_id=self.device_id)
+        print('    ============= load unet_lora in {} ============= '.format(time.time() - start_time))
+        start_time = time.time()
+        # self.unet_wo_lora = EngineOV("./models/basic/{}/0noloracombine.bmodel".format(new_basic_model, ""), device_id=self.device_id)
+        print('    ============= load unet in {} ============= '.format(time.time() - start_time))
+        start_time = time.time()
+        self.vae_decoder = EngineOV("./models/basic/{}/{}vae_decoder_multize.bmodel".format(new_basic_model, ""), device_id=self.device_id) ### rzy revised
+        print('    ============= load vae de in {} ============= '.format(time.time() - start_time))
+        start_time = time.time()
+        self.vae_encoder = EngineOV("./models/basic/{}/{}vae_encoder_multize.bmodel".format(new_basic_model, ""), device_id=self.device_id) ### rzy revised
+        print('    ============= load vae en in {} ============= '.format(time.time() - start_time))
+        
+        if controlnet_name:
+            start_time = time.time()
+            self.controlnet = EngineOV("./models/controlnet/{}.bmodel".format(controlnet_name), device_id=self.device_id) ### rzy revised
+            print('    ============= load cnet in {} ============= '.format(time.time() - start_time))
+        else:
+            self.controlnet = None
+        print(self.text_encoder, self.unet, self.vae_decoder, self.vae_encoder, self.controlnet)
+        return time.time() - start_time0
+        
+        # tile直接复用
+        # self.tile_contorlnet = EngineOV("./models/controlnet/tile_multize.bmodel")
+        # self.tile_controlnet_name = "tile"
 
     def _preprocess_mask(self, mask):
         if self.handle_masked:
@@ -91,11 +145,11 @@ class StableDiffusionPipeline:
         if isinstance(image, Image.Image):
             image = np.array(image)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        h, w = image.shape[1:]
-        if h != self.init_image_shape[0] and w != self.init_image_shape[1]:
+        h, w = image.shape[:-1]
+        if h != self.init_image_shape[1] or w != self.init_image_shape[0]:
             image = cv2.resize(
                 image,
-                (self.init_image_shape[1], self.init_image_shape[0]),
+                (self.init_image_shape[0],self.init_image_shape[1]),
                 interpolation=cv2.INTER_LANCZOS4
             )
         # normalize
@@ -118,7 +172,7 @@ class StableDiffusionPipeline:
         print("do not use controlnet_args")
         width, height = self.init_image_shape
         # 如果image是opencv则转换为PIL
-        # import pdb;pdb.set_trace()
+        # i
         if isinstance(image, Image.Image):
             image = image
         else:
@@ -140,9 +194,8 @@ class StableDiffusionPipeline:
 
     def _prepare_hed_image(self, image, controlnet_args={}):
         print("in hed prepross, we do not use controlnet_args")
-
         if self.hed_model is None:
-            self.hed_model = EngineOV("./models/other/hed_fp16_dynamic.bmodel")
+            self.hed_model = EngineOV("./models/other/hed_fp16_dynamic.bmodel", device_id=self.device_id) ### rzy revised
         hed = HEDdetector(self.hed_model)
         img = hed(image)
         image = img[:, :, None]
@@ -157,24 +210,25 @@ class StableDiffusionPipeline:
     def _after_upscale(self):
         self._before_upscale()
 
-    def generate_zero_controlnet_data(self):
+    def generate_zero_controlnet_data(self): ## rzy revised
         res = []
-        res.append(np.zeros((2, 320, self._width//8, self._height//8)).astype(np.float32))
-        res.append(np.zeros((2, 320, self._width//8, self._height//8)).astype(np.float32))
-        res.append(np.zeros((2, 320, self._width//8, self._height//8)).astype(np.float32))
-        res.append(np.zeros((2, 320, self._width//16, self._height//16)).astype(np.float32))
-        res.append(np.zeros((2, 640, self._width//16, self._height//16)).astype(np.float32))
-        res.append(np.zeros((2, 640, self._width//16, self._height//16)).astype(np.float32))
-        res.append(np.zeros((2, 640, self._width//32, self._height//32)).astype(np.float32))
-        res.append(np.zeros((2, 1280, self._width//32, self._height//32)).astype(np.float32))
-        res.append(np.zeros((2, 1280, self._width//32, self._height//32)).astype(np.float32))
-        res.append(np.zeros((2, 1280, self._width//64, self._height//64)).astype(np.float32))
-        res.append(np.zeros((2, 1280, self._width//64, self._height//64)).astype(np.float32))
-        res.append(np.zeros((2, 1280, self._width//64, self._height//64)).astype(np.float32))
-        res.append(np.zeros((2, 1280, self._width//64, self._height//64)).astype(np.float32))
+        res.append(np.zeros((2, 320, self._height//8, self._width//8)).astype(np.float32))
+        res.append(np.zeros((2, 320, self._height//8, self._width//8)).astype(np.float32))
+        res.append(np.zeros((2, 320, self._height//8, self._width//8)).astype(np.float32))
+        res.append(np.zeros((2, 320, self._height//16, self._width//16)).astype(np.float32))
+        res.append(np.zeros((2, 640, self._height//16, self._width//16)).astype(np.float32))
+        res.append(np.zeros((2, 640, self._height//16, self._width//16)).astype(np.float32))
+        res.append(np.zeros((2, 640, self._height//32, self._width//32)).astype(np.float32))
+        res.append(np.zeros((2, 1280, self._height//32, self._width//32)).astype(np.float32))
+        res.append(np.zeros((2, 1280, self._height//32, self._width//32)).astype(np.float32))
+        res.append(np.zeros((2, 1280, self._height//64, self._width//64)).astype(np.float32))
+        res.append(np.zeros((2, 1280, self._height//64, self._width//64)).astype(np.float32))
+        res.append(np.zeros((2, 1280, self._height//64, self._width//64)).astype(np.float32))
+        res.append(np.zeros((2, 1280, self._height//64, self._width//64)).astype(np.float32))
         return res
 
     def run_unet(self, latent, t, text_embedding, controlnet_img, controlnet_weight=1.0):
+        print(">>>>>>>>>>>>>>>  ",self.unet)
         start_time = time.time()
         if controlnet_img is not None:
             controlnet_res = self.controlnet({"latent":latent.astype(np.float32),  # #### conditioning_scale=controlnet_conditioning_scale,
@@ -227,9 +281,6 @@ class StableDiffusionPipeline:
         # 如果是rgba则转换为rgb
         if image.mode == "RGBA":
             image = image.convert("RGB")
-        # resize for controlnet, need keep controlnet image size same as init_image_shape
-        if image.size[0] != self.init_image_shape[0] or image.size[1] != self.init_image_shape[1]:
-            image = image.resize(self.init_image_shape, Image.LANCZOS)
         if "invert_image" in controlnet_args:
             if controlnet_args["invert_image"]:
                 image = ImageOps.invert(image)
@@ -319,8 +370,6 @@ class StableDiffusionPipeline:
         if image_mask is not None:# 还是处理init_latent内容
             init_mask = latent_mask
             if self.upscale_resize:
-                # interpolation=cv2.INTER_LANCZOS4
-                # Image.LANCZOS
                 init_mask = init_mask.resize((self.init_image_shape[1], self.init_image_shape[0]), Image.LANCZOS)
             latmask = init_mask.convert('RGB').resize((self.init_latent.shape[3], self.init_latent.shape[2]))
             latmask = np.moveaxis(np.array(latmask, dtype=np.float32), 2, 0) / 255
@@ -359,7 +408,8 @@ class StableDiffusionPipeline:
             res = cv2.resize(res, (self.upscale_resize_w, self.upscale_resize_h),
                              interpolation=cv2.INTER_LANCZOS4)
 
-        res = Image.fromarray(res[:,:,::-1])
+        res = Image.fromarray(res)# fix rgb bug
+        # res = Image.fromarray(res[:, :, ::-1])
         image = apply_overlay(res, self.paste_to, 0, self.overlay_images)
         images = WrapOutput([image])
         return images
@@ -445,12 +495,6 @@ class StableDiffusionPipeline:
                     padding=32,
                     seams_fix={},
                     seams_fix_enable=False):
-        # 确定要col和row  目前只采用linear实现方式 避免其他实现导致的问题
-        # upscaler: [none, lanczos, linear, cubic, nearest, area]之类的 优先实现：r_esrgan 4x+, esrgan 4x, r_esrgan 4x++anime6b
-        # 暂时不支持tile_height的处理
-        # seams_fix_enable: 是否开启seams_fix 目前不支持 
-        # img: PIL image    
-        # upscale_type : "linear" or "chess"
         # resize img into target_width and target_height
         if not isinstance(img, Image.Image):
             img = Image.fromarray(img)
@@ -529,19 +573,19 @@ class StableDiffusionPipeline:
         # image prepare
         if controlnet_img is not None:
             controlnet_img = self.handle_preprocess_controlnet_image(controlnet_img)
-            if self.controlnet_name == "hed":
+            if self.controlnet_name == "hed_multize":
                 controlnet_img = self._prepare_hed_image(controlnet_img)
-            elif self.controlnet_name == "canny":
+            elif self.controlnet_name == "canny_multize":
                 controlnet_img = self._prepare_canny_image(controlnet_img)
-            elif self.controlnet_name in ["tile", "qr"]:
+            elif self.controlnet_name in ["tile_multize", "qr_multize"]:
                 controlnet_img = controlnet_img
             controlnet_img = self._prepare_image(controlnet_img)
         # initialize latent latent
         if init_image is None and init_latents is None:
             init_timestep = num_inference_steps
         else: 
-            init_latents = self._encode_image(init_image)
-            init_latents = torch.tensor(init_latents)
+            # import pdb;pdb.set_trace()
+            init_latents = torch.from_numpy(self._encode_image(init_image))
             init_timestep = int(num_inference_steps * strength) + 1
             init_timestep = min(init_timestep, num_inference_steps)
             num_inference_steps = init_timestep
