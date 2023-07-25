@@ -125,15 +125,7 @@ def process_data():
                     # import pdb;pdb.set_trace()
                     if 'image' in args_info:
                         controlnet_image = data['alwayson_scripts']['controlnet']['args'][0]['image']
-                        
-                        if TEST:
-                            # image to base64
-                            controlnet_image = cv2.imread('./c.png')
-                            controlnet_image = cv2.cvtColor(controlnet_image, cv2.COLOR_BGR2RGB)
-                            controlnet_image = Image.fromarray(controlnet_image)
-                            buffer = io.BytesIO()
-                            controlnet_image.save(buffer, format='JPEG')
-                            controlnet_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
                         if controlnet_image is not None and controlnet_image != "":
                             
                             controlnet_image = handle_base64_image(controlnet_image)
@@ -211,13 +203,6 @@ def process_data_img():
     seed_resize_from_h = data.get('seed_resize_from_h',1)
     seed_resize_from_w = data.get('seed_resize_from_w',1)
     if init_image_b64:
-        if TEST:
-            init_image = cv2.imread('./c.png')
-            init_image = cv2.cvtColor(init_image, cv2.COLOR_BGR2RGB)
-            init_image = Image.fromarray(init_image)
-            buffer = io.BytesIO()
-            init_image.save(buffer, format='JPEG')
-            init_image_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         init_image_b64 = handle_base64_image(init_image_b64)
         init_image_bytes = BytesIO(base64.b64decode(init_image_b64))
         init_image = cv2.cvtColor(np.array(Image.open(init_image_bytes)), cv2.COLOR_RGB2BGR)
@@ -254,14 +239,6 @@ def process_data_img():
                     args_info = data['alwayson_scripts']['controlnet']['args'][0]
                     if 'image' in args_info:
                         controlnet_image = data['alwayson_scripts']['controlnet']['args'][0]['image']
-                        if TEST:
-                            # image to base64
-                            controlnet_image = cv2.imread('./c.png')
-                            controlnet_image = cv2.cvtColor(controlnet_image, cv2.COLOR_BGR2RGB)
-                            controlnet_image = Image.fromarray(controlnet_image)
-                            buffer = io.BytesIO()
-                            controlnet_image.save(buffer, format='JPEG')
-                            controlnet_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
                         if controlnet_image is not None and controlnet_image != "":
                             controlnet_image = handle_base64_image(controlnet_image)
                             controlnet_image = base64.b64decode(controlnet_image)
@@ -344,13 +321,6 @@ def process_upscale():
     sampler_index = data.get('sampler_index', "Euler a")
     
     if init_image_b64:
-        if TEST:
-            init_image = cv2.imread('./c.png')
-            init_image = cv2.cvtColor(init_image, cv2.COLOR_BGR2RGB)
-            init_image = Image.fromarray(init_image)
-            buffer     = io.BytesIO()
-            init_image.save(buffer, format='JPEG')
-            init_image_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         init_image_b64 = handle_base64_image(init_image_b64)
         init_image_bytes = BytesIO(base64.b64decode(init_image_b64))
         init_image = cv2.cvtColor(np.array(Image.open(init_image_bytes)), cv2.COLOR_RGB2BGR)
@@ -473,4 +443,4 @@ def process_upscale():
 
 if __name__ == "__main__":
     # engine setup
-    app.run(debug=False, port=7019, host="0.0.0.0")
+    app.run(debug=False, port=7019, host="0.0.0.0", threaded=False)
