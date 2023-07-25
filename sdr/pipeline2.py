@@ -41,7 +41,7 @@ class StableDiffusionPipeline:
         tokenizer = "./tokenizer"
         self.tokenizer = CLIPTokenizer.from_pretrained(tokenizer)
         self.scheduler = scheduler
-        self.text_encoder = EngineOV("./models/basic/{}/encoder_1684x_f32.bmodel".format(basic_model))
+        self.text_encoder = EngineOV("./models/basic/{}/text_encoder_1684x_f32.bmodel".format(basic_model))
         self.unet = EngineOV("./models/basic/{}/{}unet_2_1684x_f16.bmodel".format(basic_model, extra))
         self.latent_shape = (4,width//8,height//8)
         self.vae_decoder = EngineOV("./models/basic/{}/{}vae_decoder_1684x_f16.bmodel".format(basic_model, extra))
