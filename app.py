@@ -17,6 +17,20 @@ BASENAME = os.environ.get('BASENAME', 'deliberate-lora_pixarStyleLora_lora128-un
 CONTROLNET = os.environ.get('CONTROLNET', 'canny_multize')
 RETURN_BASE64 = bool(int(os.environ.get('RETURN_BASE64', 1)))
 
+SHAPES=[[512,512],[640,960],[960,640],[704,896],[896,704],[576,1024],[1024,576]]
+
+
+ratio_shape = {
+    1:[512,512],
+    2/3:[640,960],
+    3/2:[960,640],
+    4/3:[704,896],
+    3/4:[896,704],
+    9/16:[576,1024],
+    16/9:[1024,576],
+}
+
+
 def hanle_seed(seed):
     if seed == -1:
         seed = random.randint(0, 2 ** 31)
@@ -40,6 +54,14 @@ def handle_output_base64_image(image_base64):
     if not image_base64.startswith("data:image"):
         image_base64 = "data:image/jpeg;base64," + image_base64
     return image_base64
+
+def get_shape_by_ratio(width, height):
+    ratio = width/height
+    # 这个ratio找到最接近的ratio_shape
+    ratio_shape_list = list(ratio_shape.keys())
+    ratio_shape_list.sort(key=lambda x:abs(x-ratio))
+    ratio_shape = ratio_shape_list[0]
+    return ratio_shape
 
 @app.before_first_request
 def load_model():
@@ -96,7 +118,12 @@ def process_data():
     # firstphase_height = data.get('firstphase_height', 0) 
     # firstphase_width = data.get('firstphase_width', 0)   
     # ========== #
-    n_iter = int(data.get('n_iter', 1)) 
+    n_iter = int(data.get('n_iter', 1))
+    width = int(data.get('width', 512))
+    height = int(data.get('height', 512))
+    
+    nwidth, nheight = get_shape_by_ratio(width, height)
+
     # override_settings = data.get('override_settings',{})
     # restore_faces = bool(data.get('restore_faces', False))
     # data 是否包含 args的参数 
@@ -142,6 +169,7 @@ def process_data():
     
     with app.app_context():
         pipeline = app.config['pipeline']  # 获取 pipeline 变量
+        pipeline.set_height_width(nheight, nwidth)
         try:
             pipeline.scheduler = sampler_index
             image = pipeline(
@@ -168,6 +196,8 @@ def process_data():
             print("error")
 
     img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    if nwidth != width or nheight != height:
+        img_pil = img_pil.resize((width, height))
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
@@ -216,6 +246,10 @@ def process_data_img():
     controlnet_name  = None
     use_controlnet = True
     flag = True
+
+    width = int(data.get('width', 512))
+    height = int(data.get('height', 512))
+    nwidth, nheight = get_shape_by_ratio(width, height)
     controlnet_args  = {}
     if 'alwayson_scripts' in data:
         if "controlnet" in data['alwayson_scripts']:
@@ -253,8 +287,8 @@ def process_data_img():
 
     with app.app_context():
         pipeline = app.config['pipeline']  # 获取 pipeline 变量
+        pipeline.set_height_width(nheight, nwidth)
         try:
-            # import pdb;pdb.set_trace()
             pipeline.scheduler = sampler_index
             image = pipeline(
                 prompt=prompt,
@@ -272,6 +306,8 @@ def process_data_img():
                 seed_resize_from_w=seed_resize_from_w,
                 controlnet_args = controlnet_args,
                 use_controlnet = use_controlnet,
+                width=nwidth,
+                height=nheight,
             )
         except Exception as e:
             import traceback
@@ -281,6 +317,8 @@ def process_data_img():
             print("error")
 
     img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    if nwidth != width or nheight != height:
+        img_pil = img_pil.resize((width, height))
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
