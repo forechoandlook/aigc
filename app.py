@@ -14,7 +14,7 @@ app = Flask(__name__, static_folder='dist/assets', static_url_path='/assets')
 TEST=False
 DEVICE_ID=os.environ.get('DEVICE_ID', 30)
 BASENAME = os.environ.get('BASENAME', 'deliberate-lora_pixarStyleLora_lora128-unet-2')
-CONTROLNET = os.environ.get('CONTROLNET', 'hed')
+CONTROLNET = os.environ.get('CONTROLNET', 'canny_multize')
 RETURN_BASE64 = bool(int(os.environ.get('RETURN_BASE64', 1)))
 
 def hanle_seed(seed):
