@@ -162,7 +162,8 @@ def process_data():
                             controlnet_image = Image.open(io.BytesIO(controlnet_image))
                             controlnet_image = np.array(controlnet_image)
                         else:
-                            controlnet_image = init_image
+                            if init_image is not None:
+                                controlnet_image = init_image
                 else:
                     controlnet_image = None
                     controlnet_name = None
@@ -281,7 +282,8 @@ def process_data_img():
                             controlnet_image = Image.open(io.BytesIO(controlnet_image))
                             controlnet_image = np.array(controlnet_image)
                         else:
-                            controlnet_image = init_image
+                            if init_image is not None:
+                                controlnet_image = init_image
                 else:
                     controlnet_image = None
                     controlnet_name = None
@@ -421,7 +423,8 @@ def process_upscale():
                             controlnet_image = Image.open(io.BytesIO(controlnet_image))
                             controlnet_image = np.array(controlnet_image)
                         else:
-                            controlnet_image = init_image
+                            if init_image is not None:
+                                controlnet_image = init_image
                 else:
                     controlnet_image = None
                     controlnet_name = None
