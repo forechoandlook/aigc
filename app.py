@@ -132,6 +132,8 @@ def process_data():
     controlnet_image = None
     controlnet_name  = None
     flag = True
+    init_image = None
+    mask = None
     controlnet_args = {}
     if 'alwayson_scripts' in data:
         if "controlnet" in data['alwayson_scripts']:
@@ -167,8 +169,7 @@ def process_data():
                 else:
                     controlnet_image = None
                     controlnet_name = None
-    init_image = None
-    mask = None
+
     
     with app.app_context():
         pipeline = app.config['pipeline']  # 获取 pipeline 变量
