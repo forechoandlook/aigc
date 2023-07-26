@@ -61,8 +61,8 @@ def get_shape_by_ratio(width, height):
     # 这个ratio找到最接近的ratio_shape
     ratio_shape_list = list(ratio_shape.keys())
     ratio_shape_list.sort(key=lambda x:abs(x-ratio))
-    ratio_shape = ratio_shape_list[0]
-    return ratio_shape
+    nshape = ratio_shape[ratio_shape_list[0]]
+    return nshape
 
 @app.before_first_request
 def load_model():
