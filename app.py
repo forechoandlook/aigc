@@ -166,11 +166,14 @@ def process_data():
                         else:
                             if init_image is not None:
                                 controlnet_image = init_image
+                            else:
+                                controlnet_image = None
                 else:
                     controlnet_image = None
                     controlnet_name = None
 
-    
+    init_image = None
+    mask = None    
     with app.app_context():
         pipeline = app.config['pipeline']  # 获取 pipeline 变量
         pipeline.set_height_width(nheight, nwidth)

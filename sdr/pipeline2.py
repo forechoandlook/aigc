@@ -228,7 +228,6 @@ class StableDiffusionPipeline:
         return res
 
     def run_unet(self, latent, t, text_embedding, controlnet_img, controlnet_weight=1.0):
-        print(">>>>>>>>>>>>>>>  ",self.unet)
         start_time = time.time()
         if controlnet_img is not None:
             controlnet_res = self.controlnet({"latent":latent.astype(np.float32),  # #### conditioning_scale=controlnet_conditioning_scale,
