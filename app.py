@@ -20,15 +20,7 @@ RETURN_BASE64 = bool(int(os.environ.get('RETURN_BASE64', 1)))
 SHAPES=[[512,512],[640,960],[960,640],[704,896],[896,704],[576,1024],[1024,576]]
 
 
-ratio_shape = {
-    1:[512,512],
-    2/3:[640,960],
-    3/2:[960,640],
-    4/3:[704,896],
-    3/4:[896,704],
-    9/16:[576,1024],
-    16/9:[1024,576],
-}
+
 
 
 def hanle_seed(seed):
@@ -56,6 +48,15 @@ def handle_output_base64_image(image_base64):
     return image_base64
 
 def get_shape_by_ratio(width, height):
+    ratio_shape = {
+        1:[512,512],
+        2/3:[640,960],
+        3/2:[960,640],
+        4/3:[704,896],
+        3/4:[896,704],
+        9/16:[576,1024],
+        16/9:[1024,576],
+    }
     ratio = width/height
     # 这个ratio找到最接近的ratio_shape
     ratio_shape_list = list(ratio_shape.keys())
