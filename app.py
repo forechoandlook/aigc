@@ -62,6 +62,7 @@ def get_shape_by_ratio(width, height):
     ratio_shape_list = list(ratio_shape.keys())
     ratio_shape_list.sort(key=lambda x:abs(x-ratio))
     nshape = ratio_shape[ratio_shape_list[0]]
+    print(nshape)
     return nshape
 
 @app.before_first_request
@@ -307,8 +308,6 @@ def process_data_img():
                 seed_resize_from_w=seed_resize_from_w,
                 controlnet_args = controlnet_args,
                 use_controlnet = use_controlnet,
-                width=nwidth,
-                height=nheight,
             )
         except Exception as e:
             import traceback
