@@ -10,6 +10,9 @@ from PIL import Image, ImageEnhance
 import numpy as np
 # engine
 from sdr import StableDiffusionPipeline
+from sdr import UpscaleModel
+
+
 app = Flask(__name__, static_folder='dist/assets', static_url_path='/assets')
 TEST=False
 DEVICE_ID=os.environ.get('DEVICE_ID', 30)
@@ -17,19 +20,79 @@ BASENAME = os.environ.get('BASENAME', 'deliberate-lora_pixarStyleLora_lora128-un
 CONTROLNET = os.environ.get('CONTROLNET', 'canny_multize')
 RETURN_BASE64 = bool(int(os.environ.get('RETURN_BASE64', 1)))
 
-SHAPES=[[512,512],[640,960],[960,640],[704,896],[896,704],[576,1024],[1024,576]]
+SHAPES=[[640, 512], [192, 384], [448, 448], [512, 576], [384, 128], [384, 448], [448, 256], \
+             [896, 512], [448, 128], [512, 384], [320, 512], [192, 512], [512, 640], [384, 320], \
+                [384, 512], [704, 512], [512, 448], [128, 448], [320, 448], [256, 384], [384, 384], \
+                    [128, 512], [512, 704], [320, 384], [832, 512], [512, 832], [448, 512], [512, 320], \
+                        [256, 512], [448, 192], [512, 896], [256, 448], [128, 384], [384, 256], [576, 512], \
+                            [768, 512], [512, 256], [512, 512], [384, 192], [512, 192], [512, 128], [768, 768], \
+                                [512, 768], [192, 448], [448, 320], [448, 384]]
 
 
-
-
-
-def hanle_seed(seed):
-    if seed == -1:
-        seed = random.randint(0, 2 ** 31)
-    return seed
 
 from flask_cors import CORS
 CORS(app, supports_credentials=True)
+
+def get_fixed_seed(seed):
+    if seed is None or seed == '' or seed == -1:
+        return int(random.randrange(4294967294))
+    return seed
+
+def fix_iter_seed(seed,iter):
+    iter += 1
+    # current iter standards for the current image in batch, which is not the same with webui
+    assert iter >= 1
+    iter = iter - 1
+    delta_seed = 0 if iter == 0 else int(random.randrange(100000*iter))
+    return seed + delta_seed
+
+@app.before_first_request
+def load_model():
+    pipeline = StableDiffusionPipeline(
+        basic_model=BASENAME,
+        controlnet_name=CONTROLNET)
+    app.config['pipeline'] = pipeline
+    app.config['base_model'] = BASENAME
+    app.config['available'] = True
+    print("register pipeline to app object.")
+    print('pipeline is in app.config:', 'pipeline' in app.config)
+
+
+# 模型切换：如果 给生图请求加上basemodel参数，“允许用户的文生图、图生图”触发模型切换，那在run pipeline之前要先check模型对不对，不对就要重新load
+# 但此时其他用户可能还在用当前模型，触发模型reload可能非常频繁
+@app.route('/switch', methods=['POST'])
+def switch_checkpoint():
+    data = request.get_json()
+    new_basemodel_name = data.get('basemodel_name')
+    if new_basemodel_name != app.config['base_model']:
+        app.config['available'] = False
+        del app.config['pipeline']
+        app.config['pipeline'] = StableDiffusionPipeline(basic_model=new_basemodel_name, controlnet_name=CONTROLNET)
+        app.config['base_model'] = new_basemodel_name
+        app.config['available'] = True
+        res = {'results': "Model has been set to {}".format(app.config['base_model'])}
+    else:
+        res = {'results': "no changes"}
+    # 设置响应头
+    response = jsonify(res)
+    response.headers['Content-Type'] = 'application/json'
+    return response
+
+
+@app.route('/chlora', methods=['POST'])
+def add_or_rm_lora():
+    data = request.get_json()
+    lora_state = data.get('withlora')
+    changed = app.config['pipeline'].set_lora(lora_state)
+    response = jsonify({'changed': changed, 'hasLora': lora_state})
+    response.headers['Content-Type'] = 'application/json'
+    return response
+
+
+@app.before_request
+def check_model():
+    assert app.config['available'] == True
+
 
 def handle_base64_image(controlnet_image):
     # 目前只支持一个controlnet_image, 不可以是list
@@ -47,6 +110,7 @@ def handle_output_base64_image(image_base64):
         image_base64 = "data:image/jpeg;base64," + image_base64
     return image_base64
 
+# TODO
 def get_shape_by_ratio(width, height):
     ratio_shape = {
         1:[512,512],
@@ -65,14 +129,6 @@ def get_shape_by_ratio(width, height):
     print(nshape)
     return nshape
 
-@app.before_first_request
-def load_model():
-    pipeline = StableDiffusionPipeline(
-        basic_model=BASENAME,
-        controlnet_name=CONTROLNET)
-    app.config['pipeline'] = pipeline
-    print("register pipeline to app object.")
-    print('pipeline is in app.config:', 'pipeline' in app.config)
 
 @app.route('/')
 def home():
@@ -83,7 +139,6 @@ def home():
 @app.route('/favicon.ico')
 def favicon():
     return send_from_directory(os.path.join(app.root_path, 'dist'), 'favicon.ico', mimetype='image/vnd.microsoft.icon')
-
 
 
 @app.route("/hello")
@@ -101,39 +156,16 @@ def process_data():
     guidance_scale = int(data.get('cfg_scale', 7))
     strength = float(data.get('denoising_strength'))
     sampler_index = data.get('sampler_index', "Euler a")
-    
-    seed = int(data.get('seed'))
-    if seed == -1:
-        seed = random.randint(0, 2 ** 31)
-    # =========== #
-    # s_churn = int(data.get('s_churn',0))
-    # s_noise = int(data.get('s_noise',1))
-    # s_tmax = data.get('s_tmax')
-    # s_tmin = data.get('s_tmin')
-    # =========== #
-    # n_iter = int(data.get('n_iter',1))
-    subseed = int(data.get('subseed'))# 不可以为-1
+    seed = get_fixed_seed(int(data.get('seed')))
+    subseed = get_fixed_seed(int(data.get('subseed')))# 不可以为-1
     subseed_strength = float(data.get('subseed_strength'))
     seed_resize_from_h = data.get('seed_resize_from_h',1)
     seed_resize_from_w = data.get('seed_resize_from_w',1)
-    # ========== #
-    # firstphase_height = data.get('firstphase_height', 0) 
-    # firstphase_width = data.get('firstphase_width', 0)   
-    # ========== #
     n_iter = int(data.get('n_iter', 1))
-    width = int(data.get('width', 512))
-    height = int(data.get('height', 512))
-    
-    nwidth, nheight = get_shape_by_ratio(width, height)
-
-    # override_settings = data.get('override_settings',{})
-    # restore_faces = bool(data.get('restore_faces', False))
+    seed = fix_iter_seed(seed, n_iter)
     # data 是否包含 args的参数 
     controlnet_image = None
-    controlnet_name  = None
     flag = True
-    init_image = None
-    mask = None
     controlnet_args = {}
     if 'alwayson_scripts' in data:
         if "controlnet" in data['alwayson_scripts']:
@@ -141,45 +173,34 @@ def process_data():
                 controlnet_args = data['alwayson_scripts']['controlnet']['args'][0]
                 if "enabled" in data['alwayson_scripts']['controlnet']['args'][0]:
                     if data['alwayson_scripts']['controlnet']['args'][0]['enabled']==False:
-                        controlnet_name = None
                         controlnet_image= None
                         flag = False
                     else:
-                        controlnet_name = data['alwayson_scripts']['controlnet']['args'][0]['module'] # must be hed and canny 
                         flag = True
                 else:
                     flag = False
-                    controlnet_name = None
                     controlnet_image= None
                 if len(data['alwayson_scripts']['controlnet']['args']) ==1  and flag:
                     args_info = data['alwayson_scripts']['controlnet']['args'][0]
-                    # import pdb;pdb.set_trace()
                     if 'image' in args_info:
                         controlnet_image = data['alwayson_scripts']['controlnet']['args'][0]['image']
-
-                        if controlnet_image is not None and controlnet_image != "":
-                            
-                            controlnet_image = handle_base64_image(controlnet_image)
-                            controlnet_image = base64.b64decode(controlnet_image)
-                            controlnet_image = Image.open(io.BytesIO(controlnet_image))
-                            controlnet_image = np.array(controlnet_image)
-                        else:
-                            if init_image is not None:
-                                controlnet_image = init_image
-                            else:
-                                controlnet_image = None
+                        # base64 to image
+                        controlnet_image = base64.b64decode(controlnet_image)
+                        controlnet_image = Image.open(io.BytesIO(controlnet_image))
                 else:
                     controlnet_image = None
-                    controlnet_name = None
-
     init_image = None
-    mask = None    
+    mask = None
+
     with app.app_context():
         pipeline = app.config['pipeline']  # 获取 pipeline 变量
-        pipeline.set_height_width(nheight, nwidth)
+        width = int(data.get('width', 512))
+        height = int(data.get('height', 512))
+        assert [width, height] in SHAPES
+        pipeline.set_height_width(height, width)
         try:
             pipeline.scheduler = sampler_index
-            image = pipeline(
+            img_pil = pipeline(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 init_image=init_image,
@@ -202,15 +223,12 @@ def process_data():
             print(e)
             print("error")
 
-    img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    if nwidth != width or nheight != height:
-        img_pil = img_pil.resize((width, height))
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    ret_img_b64 = handle_output_base64_image(ret_img_b64)
+
     # 构建JSON响应
-    response = jsonify({'code':0,'images': [ret_img_b64]})
+    response = jsonify({'images': [ret_img_b64]})
 
     # 设置响应头
     response.headers['Content-Type'] = 'application/json'
@@ -227,22 +245,27 @@ def process_data_img():
     num_inference_steps = int(data.get('steps'))
     guidance_scale = int(data.get('cfg_scale'))
     strength = float(data.get('denoising_strength'))
-    seed = hanle_seed(int(data.get('seed')))
-    
+    seed = get_fixed_seed(int(data.get('seed')))
     sampler_index = data.get('sampler_index', "Euler a")
+    # data 是否包含 args的参数 
     controlnet_image = None
     init_image = None
     mask = None
     init_image_b64 = data['init_images'][0]
     mask_image_b64 = data.get('mask') or None
-    subseed = int(data.get('subseed'))# 不可以为-1
+    subseed = get_fixed_seed(int(data.get('subseed')))# 不可以为-1
     subseed_strength = float(data.get('subseed_strength'))
-    seed_resize_from_h = data.get('seed_resize_from_h',1)
-    seed_resize_from_w = data.get('seed_resize_from_w',1)
+    seed_resize_from_h = data.get('seed_resize_from_h',0)
+    seed_resize_from_w = data.get('seed_resize_from_w',0)
+    n_iter = int(data.get('n_iter', 1))
+    seed = fix_iter_seed(seed, n_iter)
+    width = int(data.get('width', 512))
+    height = int(data.get('height', 512))
+
+
     if init_image_b64:
-        init_image_b64 = handle_base64_image(init_image_b64)
         init_image_bytes = BytesIO(base64.b64decode(init_image_b64))
-        init_image = cv2.cvtColor(np.array(Image.open(init_image_bytes)), cv2.COLOR_RGB2BGR)
+        init_image = Image.open(init_image_bytes)
     if init_image_b64 and mask_image_b64:
         mask = BytesIO(base64.b64decode(mask_image_b64))
         mask[mask > 0] = 255
@@ -250,13 +273,7 @@ def process_data_img():
         mask = None
 
     controlnet_image = None
-    controlnet_name  = None
-    use_controlnet = True
     flag = True
-
-    width = int(data.get('width', 512))
-    height = int(data.get('height', 512))
-    nwidth, nheight = get_shape_by_ratio(width, height)
     controlnet_args  = {}
     if 'alwayson_scripts' in data:
         if "controlnet" in data['alwayson_scripts']:
@@ -264,41 +281,30 @@ def process_data_img():
                 controlnet_args = data['alwayson_scripts']['controlnet']['args'][0]
                 if "enabled" in data['alwayson_scripts']['controlnet']['args'][0]:
                     if data['alwayson_scripts']['controlnet']['args'][0]['enabled']==False:
-                        use_controlnet = False
-                        controlnet_name = None
                         controlnet_image= None
                         flag = False
                     else:
-                        use_controlnet = True
-                        controlnet_name = data['alwayson_scripts']['controlnet']['args'][0]['module'] # must be hed and canny 
                         flag = True
                 else:
                     flag = False
-                    controlnet_name = None
                     controlnet_image= None
                 if len(data['alwayson_scripts']['controlnet']['args']) ==1  and flag:
                     args_info = data['alwayson_scripts']['controlnet']['args'][0]
                     if 'image' in args_info:
                         controlnet_image = data['alwayson_scripts']['controlnet']['args'][0]['image']
-                        if controlnet_image is not None and controlnet_image != "":
-                            controlnet_image = handle_base64_image(controlnet_image)
-                            controlnet_image = base64.b64decode(controlnet_image)
-                            controlnet_image = Image.open(io.BytesIO(controlnet_image))
-                            controlnet_image = np.array(controlnet_image)
-                        else:
-                            if init_image is not None:
-                                controlnet_image = init_image
+                        # base64 to image
+                        controlnet_image = base64.b64decode(controlnet_image)
+                        controlnet_image = Image.open(io.BytesIO(controlnet_image))
                 else:
                     controlnet_image = None
-                    controlnet_name = None
-                    
 
     with app.app_context():
         pipeline = app.config['pipeline']  # 获取 pipeline 变量
-        pipeline.set_height_width(nheight, nwidth)
+        assert [width, height] in SHAPES
+        pipeline.set_height_width(height, width)
         try:
             pipeline.scheduler = sampler_index
-            image = pipeline(
+            img_pil = pipeline(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 init_image=init_image,
@@ -313,7 +319,7 @@ def process_data_img():
                 seed_resize_from_h=seed_resize_from_h,
                 seed_resize_from_w=seed_resize_from_w,
                 controlnet_args = controlnet_args,
-                use_controlnet = use_controlnet,
+                use_controlnet = flag
             )
         except Exception as e:
             import traceback
@@ -321,21 +327,17 @@ def process_data_img():
             print(trace)
             print(e)
             print("error")
-
-    img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    if nwidth != width or nheight != height:
-        img_pil = img_pil.resize((width, height))
+    
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    ret_img_b64 = handle_output_base64_image(ret_img_b64)
+
     # 构建JSON响应
-    response = jsonify({'code':0,'images': [ret_img_b64]})
+    response = jsonify({'images': [ret_img_b64]})
 
     # 设置响应头
     response.headers['Content-Type'] = 'application/json'
     return response
-
 
 
 @app.route("/upscale", methods=['POST'])
@@ -352,29 +354,29 @@ def process_upscale():
     num_inference_steps = int(data.get('steps'))
     guidance_scale = int(data.get('cfg_scale'))
     strength = float(data.get('denoising_strength'))
-    seed = int(data.get('seed'))
+    seed = get_fixed_seed(int(data.get('seed')))
     controlnet_image = None
     init_image = None
     mask = None
     init_image_b64 = data['init_images'][0]
     mask_image_b64 = data.get('mask') or None
-    subseed = int(data.get('subseed'))# 不可以为-1
+    subseed = get_fixed_seed(int(data.get('subseed')))# 不可以为-1
     subseed_strength = float(data.get('subseed_strength'))
     seed_resize_from_h = data.get('seed_resize_from_h',1)
     seed_resize_from_w = data.get('seed_resize_from_w',1)
     sampler_index = data.get('sampler_index', "Euler a")
-    
+    width =  512
+    height = 512
+
     if init_image_b64:
-        init_image_b64 = handle_base64_image(init_image_b64)
         init_image_bytes = BytesIO(base64.b64decode(init_image_b64))
-        init_image = cv2.cvtColor(np.array(Image.open(init_image_bytes)), cv2.COLOR_RGB2BGR)
+        init_image = Image.open(init_image_bytes)
     if init_image_b64 and mask_image_b64:
         mask = BytesIO(base64.b64decode(mask_image_b64))
         mask[mask > 0] = 255
     else:
         mask = None
     controlnet_image = None
-    controlnet_name  = None
     controlnet_args  = {}
     flag = True
     # upscale 参数处理 
@@ -383,14 +385,15 @@ def process_upscale():
     target_height  = int(data.get('target_height', 1024))
     # upscale和target必需传一个，两个都传的话以upscale_factor为准
     upscale_type   = data.get('upscale_type', 'LINEAR')# 必须大写 只有两种形式 LINEAR 和 CHESS
-    tile_width     = int(data.get('tile_width', 512))# 目前tile大小规定为512 多tile的方式需要再测试
-    tile_height    = int(data.get('tile_height', 512))# 目前tile大小规定为512 多tile的方式需要再测试
+    # tile_width     = int(data.get('tile_width', 512))# 目前tile大小规定为512 多tile的方式需要再测试
+    # tile_height    = int(data.get('tile_height', 512))# 目前tile大小规定为512 多tile的方式需要再测试
+    tile_width  = 512
+    tile_height = 512
     mask_blur      = float(data.get('mask_blur', 8.0))
     padding        = int(data.get('padding', 32))
     upscaler       = data.get('upscaler', None)# placeholder 用于以后的超分模型
     seams_fix      = data.get('seams_fix', {})
     seams_fix_enable= bool(seams_fix.get('enable', False))# 目前没有开启缝隙修复
-    
 
     if 'alwayson_scripts' in data:
         if "controlnet" in data['alwayson_scripts']:
@@ -398,46 +401,29 @@ def process_upscale():
                 controlnet_args = data['alwayson_scripts']['controlnet']['args'][0]
                 if "enabled" in data['alwayson_scripts']['controlnet']['args'][0]:
                     if data['alwayson_scripts']['controlnet']['args'][0]['enabled']==False:
-                        controlnet_name = None
                         controlnet_image= None
                         flag = False
                     else:
-                        controlnet_name = data['alwayson_scripts']['controlnet']['args'][0]['module'] # must be hed and canny 
                         flag = True
                 else:
                     flag = False
-                    controlnet_name = None
                     controlnet_image= None
                 if len(data['alwayson_scripts']['controlnet']['args']) ==1  and flag:
                     args_info = data['alwayson_scripts']['controlnet']['args'][0]
                     if 'image' in args_info:
                         controlnet_image = data['alwayson_scripts']['controlnet']['args'][0]['image']
-                        if TEST:
-                            # image to base64
-                            controlnet_image = cv2.imread('./c.png')
-                            controlnet_image = cv2.cvtColor(controlnet_image, cv2.COLOR_BGR2RGB)
-                            controlnet_image = Image.fromarray(controlnet_image)
-                            buffer = io.BytesIO()
-                            controlnet_image.save(buffer, format='JPEG')
-                            controlnet_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
                         # base64 to image
-                        if controlnet_image is not None and controlnet_image != "":
-                            controlnet_image = handle_base64_image(controlnet_image)
-                            controlnet_image = base64.b64decode(controlnet_image)
-                            controlnet_image = Image.open(io.BytesIO(controlnet_image))
-                            controlnet_image = np.array(controlnet_image)
-                        else:
-                            if init_image is not None:
-                                controlnet_image = init_image
+                        controlnet_image = base64.b64decode(controlnet_image)
+                        controlnet_image = Image.open(io.BytesIO(controlnet_image))
                 else:
                     controlnet_image = None
-                    controlnet_name = None
-                    
     with app.app_context():
         pipeline = app.config['pipeline']  # 获取 pipeline 变量
+        assert [width, height] in SHAPES
+        pipeline.set_height_width(height, width)
         try:
             pipeline.scheduler = sampler_index
-            image = pipeline.wrap_upscale(
+            img_pil = pipeline.wrap_upscale(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 init_image=init_image,
@@ -452,7 +438,6 @@ def process_upscale():
                 seed_resize_from_h=seed_resize_from_h,
                 seed_resize_from_w=seed_resize_from_w,
                 controlnet_args = controlnet_args,
-                # upscale 参数
                 upscale_factor = upscale_factor,
                 target_width = target_width,
                 target_height = target_height,
@@ -464,7 +449,6 @@ def process_upscale():
                 seams_fix_enable = seams_fix_enable,
                 upscaler = upscaler,
                 seams_fix = seams_fix,
-                # upscale end
             )
         except Exception as e:
             import traceback
@@ -472,15 +456,63 @@ def process_upscale():
             print(trace)
             print(e)
             print("error")
-
-    # img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    img_pil = image
+            raise e
+    
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    ret_img_b64 = handle_output_base64_image(ret_img_b64)
     # 构建JSON响应
-    response = jsonify({'code':0,'images': [ret_img_b64]})
+    response = jsonify({'images': [ret_img_b64]})
+    # 设置响应头
+    response.headers['Content-Type'] = 'application/json'
+    return response
+
+
+@app.route("/basicupscale", methods=['POST'])
+def process_upscale_with_upscale_model():
+    # =================================================#
+    # 只接受两个输入：img和upsacle ratio
+    # =================================================#
+    # 从请求中获取 JSON 数据
+    data = request.get_json()
+    # 从 JSON 数据中获取所需数据
+    init_image_b64 = data['init_images'][0]
+    upscale_factor = None
+    if data.get('upscale_factor') is None:
+        if data.get('target_width') is None or data.get('target_height') is None:
+            raise Exception("upscale_factor or target_width and target_height must be provided")
+        else:
+            upscale_factor = None
+            target_width = int(data.get('target_width'))
+            target_height = int(data.get('target_height'))
+    else:
+        upscale_factor = int(data.get('upscale_factor'))
+    init_image = None
+    if init_image_b64:
+        try:
+            init_image_bytes = BytesIO(base64.b64decode(init_image_b64))
+            init_image = Image.open(init_image_bytes)
+        except Exception as e:
+            print("init image base64 decode error")
+            print(init_image_b64)
+            print("please check the image is/not is correct")
+            print("please be sure that the image MUST be base64. Any other format will cause error")
+            print("error:",e)
+            raise e
+    else:
+        raise Exception("init image must be provided")
+    if upscale_factor is None:
+        source_width = init_image.size[0]
+        source_height = init_image.size[1]
+        assert target_width / source_width == target_height / source_height
+        upscale_factor = max(target_width / source_width, target_height / source_height)
+    upsacle = UpscaleModel(tile_size=(200,200),padding=4,upscale_rate=upscale_factor,model_size=(200,200))
+    img_pil = upsacle.extract_and_enhance_tiles(init_image, upscale_ratio=upscale_factor)
+    buffer = io.BytesIO()
+    img_pil.save(buffer, format='JPEG')
+    ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    # 构建JSON响应
+    response = jsonify({'images': [ret_img_b64]})
     # 设置响应头
     response.headers['Content-Type'] = 'application/json'
     return response

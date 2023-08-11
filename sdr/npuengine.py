@@ -41,7 +41,6 @@ class EngineOV:
         args = {}
         for i in range(len(values)):
             args[self.input_name[i]] = values[i]
-        # import pdb; pdb.set_trace()
         output = self.model.process(self.graph_name, args)
         res = []
 

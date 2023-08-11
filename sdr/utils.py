@@ -118,3 +118,4 @@ def apply_overlay(image, paste_loc, index, overlays):
     image = image.convert('RGB')
 
     return image
+

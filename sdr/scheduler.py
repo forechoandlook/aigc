@@ -749,7 +749,6 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
 # sample_dpmpp_2m_sde -> model -> denoised  这里面的extra_args特别重要，不然会出很多bug
 def model_runner( discreteEpsDDPMDenoiser, guidance_scale, x, sigmas, mask=None, using_paint=False,  **extra_args):
     sigmas = torch.tensor([sigmas, sigmas])
-    # x [1,4,64,64] -> [2,4,64,64]
     x = torch.cat([x, x], dim=0)
     output = discreteEpsDDPMDenoiser(x, sigmas, **extra_args)# TODO 这一个是最麻烦的 搞定完这个就可以了
     init_latents_proper = extra_args['init_latents_proper']
@@ -888,7 +887,6 @@ def sample(steps, x,
     if 'sigma_min' in parameters:
         extra_params_kwargs['sigma_min'] = wrap_ds.sigmas[0].item()
         extra_params_kwargs['sigma_max'] = wrap_ds.sigmas[-1].item()
-    
     model_partical_fn = model_partical_fn
     discreteEpsDDPMDenoiser = DiscreteEpsDDPMDenoiser(model_partical_fn, alphas_cumprod, True)# 如何配置model部分 TODO 
     partical_model = partial(model_runner,discreteEpsDDPMDenoiser, guidance_scale)
