@@ -94,7 +94,7 @@ class StableDiffusionPipeline:
         print(self.text_encoder, self.unet, self.vae_decoder,
               self.vae_encoder, self.controlnet)
     
-    def set_lora(lora_state):
+    def set_lora(self, lora_state):
         if lora_state: # set to unet_lora
             if self.unet == self.unet_lora:
                 return False

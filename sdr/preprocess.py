@@ -10,7 +10,7 @@ import torch
 import numpy as np
 from PIL import Image
 
-from mbv2_msld_large import pred_lines, MobileV2_MLSD_Large
+from .mbv2_msld_large import pred_lines, MobileV2_MLSD_Large
 
 
 def HWC3(x):

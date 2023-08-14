@@ -17,7 +17,7 @@ app = Flask(__name__, static_folder='dist/assets', static_url_path='/assets')
 TEST=False
 DEVICE_ID=os.environ.get('DEVICE_ID', 30)
 BASENAME = os.environ.get('BASENAME', 'deliberate-lora_pixarStyleLora_lora128-unet-2')
-CONTROLNET = os.environ.get('CONTROLNET', 'canny_multize')
+CONTROLNET = os.environ.get('CONTROLNET', 'canny_multisize')
 RETURN_BASE64 = bool(int(os.environ.get('RETURN_BASE64', 1)))
 
 SHAPES=[[640, 512], [192, 384], [448, 448], [512, 576], [384, 128], [384, 448], [448, 256], \
@@ -27,7 +27,6 @@ SHAPES=[[640, 512], [192, 384], [448, 448], [512, 576], [384, 128], [384, 448], 
                         [256, 512], [448, 192], [512, 896], [256, 448], [128, 384], [384, 256], [576, 512], \
                             [768, 512], [512, 256], [512, 512], [384, 192], [512, 192], [512, 128], [768, 768], \
                                 [512, 768], [192, 448], [448, 320], [448, 384]]
-
 
 
 from flask_cors import CORS
@@ -225,6 +224,7 @@ def process_data():
 
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
+    # img_pil.save("txt2img.png")
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
     # 构建JSON响应
@@ -261,7 +261,6 @@ def process_data_img():
     seed = fix_iter_seed(seed, n_iter)
     width = int(data.get('width', 512))
     height = int(data.get('height', 512))
-
 
     if init_image_b64:
         init_image_bytes = BytesIO(base64.b64decode(init_image_b64))
@@ -330,6 +329,7 @@ def process_data_img():
     
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
+    # img_pil.save('./img2img.png')
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
     # 构建JSON响应
@@ -460,6 +460,7 @@ def process_upscale():
     
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
+    # img_pil.save("upscale.png")
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
     # 构建JSON响应
     response = jsonify({'images': [ret_img_b64]})
@@ -510,6 +511,7 @@ def process_upscale_with_upscale_model():
     img_pil = upsacle.extract_and_enhance_tiles(init_image, upscale_ratio=upscale_factor)
     buffer = io.BytesIO()
     img_pil.save(buffer, format='JPEG')
+    # img_pil.save("basicupscale.png")
     ret_img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
     # 构建JSON响应
     response = jsonify({'images': [ret_img_b64]})
