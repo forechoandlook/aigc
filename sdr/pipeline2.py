@@ -731,8 +731,7 @@ class StableDiffusionPipeline:
             controlnet_args={},
             controlnet_weight=1.0,
             use_controlnet=True,
-            init_latents=None,
-            enable_prompt_weight=True
+            init_latents=None
     ):
         seed_torch(seeds[0])
         init_steps = num_inference_steps
@@ -741,40 +740,13 @@ class StableDiffusionPipeline:
             controlnet_img = init_image
         self.controlnet_args = {}
 
-        if enable_prompt_weight:
-            text_embeddings = self.tokenizer_forward([prompt])
-            if guidance_scale > 1.0 or negative_prompt is not None:
-                if negative_prompt is None:
-                    negative_prompt = ""
-            uncond_embeddings = self.tokenizer_forward([negative_prompt])
-            text_embeddings = np.concatenate((uncond_embeddings, text_embeddings), axis=0)
-        else:
-            tokens = self.tokenizer(
-                prompt,
-                padding="max_length",
-                max_length=self.tokenizer.model_max_length,
-                truncation=True
-            ).input_ids
-            # text_embedding use npu engine to inference
-            text_embeddings = self.text_encoder(
-                {"tokens": np.array([tokens]).astype(np.int32)})[0]
-
-            # do classifier free guidance
-            if guidance_scale > 1.0 or negative_prompt is not None:
-                uncond_token = ""
-                if negative_prompt is not None:
-                    uncond_token = negative_prompt
-                tokens_uncond = self.tokenizer(
-                    uncond_token,
-                    padding="max_length",
-                    max_length=self.tokenizer.model_max_length,
-                    truncation=True
-                ).input_ids
-                uncond_embeddings = self.text_encoder(
-                    {"tokens": np.array([tokens_uncond], dtype=np.int32)})[0]
-            
-            text_embeddings = np.concatenate((uncond_embeddings, text_embeddings), axis=0)
-
+        text_embeddings = self.tokenizer_forward([prompt])
+        if guidance_scale > 1.0 or negative_prompt is not None:
+            if negative_prompt is None:
+                negative_prompt = ""
+        uncond_embeddings = self.tokenizer_forward([negative_prompt])
+        text_embeddings = np.concatenate((uncond_embeddings, text_embeddings), axis=0)
+        
         # controlnet image prepare
         if controlnet_img is not None: # PIL Image
             controlnet_img = self.preprocess_controlnet_image(controlnet_img)
