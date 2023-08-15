@@ -2,3 +2,5 @@
 */__pycache__/*
 models/
 copy.sh
+log.log
+.DS_Store
