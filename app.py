@@ -12,16 +12,12 @@ import numpy as np
 from sdr import StableDiffusionPipeline
 app = Flask(__name__, static_folder='dist/assets', static_url_path='/assets')
 TEST=False
-DEVICE_ID=os.environ.get('DEVICE_ID', 30)
+DEVICE_ID=os.environ.get('DEVICE_ID', 0)
 BASENAME = os.environ.get('BASENAME', 'deliberate-lora_pixarStyleLora_lora128-unet-2')
 CONTROLNET = os.environ.get('CONTROLNET', 'canny_multize')
 RETURN_BASE64 = bool(int(os.environ.get('RETURN_BASE64', 1)))
 
 SHAPES=[[512,512],[640,960],[960,640],[704,896],[896,704],[576,1024],[1024,576]]
-
-
-
-
 
 def hanle_seed(seed):
     if seed == -1:
