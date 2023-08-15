@@ -16,7 +16,7 @@ wrap = DDIMScheduler(
     beta_schedule="scaled_linear",
     beta_start=0.00085,
     num_train_timesteps=1000,
-    steps_offset=1,
+    # steps_offset=1,
     clip_sample=False,
     set_alpha_to_one=False,
 )

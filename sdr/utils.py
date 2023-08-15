@@ -1,6 +1,8 @@
+from collections import namedtuple
 from PIL import Image, ImageOps, ImageEnhance
-LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+import math
 
+LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
 
 class SuperResolutionUpscaler:
     def __init__(self, name, scaler, model_path=None, data_path=None):
@@ -118,3 +120,46 @@ def apply_overlay(image, paste_loc, index, overlays):
     image = image.convert('RGB')
 
     return image
+
+
+class PromptChunk:
+    """
+    This object contains token ids, weight (multipliers:1.4) and textual inversion embedding info for a chunk of prompt.
+    If a prompt is short, it is represented by one PromptChunk, otherwise, multiple are necessary.
+    Each PromptChunk contains an exact amount of tokens - 77, which includes one for start and end token,
+    so just 75 tokens from prompt.
+    """
+
+    def __init__(self):
+        self.tokens = []
+        self.multipliers = []
+        self.fixes = []
+
+PromptChunkFix = namedtuple('PromptChunkFix', ['offset', 'embedding'])
+
+def process_text(texts):
+    used_custom_terms = []
+    remade_batch_tokens = []
+    hijack_comments = []
+    hijack_fixes = []
+    token_count = 0
+
+    cache = {}
+    batch_multipliers = []
+    for line in texts:
+        if line in cache:
+            remade_tokens, fixes, multipliers = cache[line]
+        else:
+            remade_tokens, fixes, multipliers, current_token_count = self.tokenize_line(line, used_custom_terms, hijack_comments)
+            token_count = max(current_token_count, token_count)
+
+            cache[line] = (remade_tokens, fixes, multipliers)
+
+        remade_batch_tokens.append(remade_tokens)
+        hijack_fixes.append(fixes)
+        batch_multipliers.append(multipliers)
+
+    return batch_multipliers, remade_batch_tokens, used_custom_terms, hijack_comments, hijack_fixes, token_count
+
+def get_target_prompt_token_count(token_count):
+    return math.ceil(max(token_count, 1) / 75) * 75

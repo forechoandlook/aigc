@@ -24,9 +24,6 @@ def hanle_seed(seed):
         seed = random.randint(0, 2 ** 31)
     return seed
 
-from flask_cors import CORS
-CORS(app, supports_credentials=True)
-
 def handle_base64_image(controlnet_image):
     # 目前只支持一个controlnet_image, 不可以是list
     if isinstance(controlnet_image, list):
@@ -158,7 +155,7 @@ def process_data():
                             controlnet_image = handle_base64_image(controlnet_image)
                             controlnet_image = base64.b64decode(controlnet_image)
                             controlnet_image = Image.open(io.BytesIO(controlnet_image))
-                            controlnet_image = np.array(controlnet_image)
+                            # controlnet_image = np.array(controlnet_image)
                         else:
                             if init_image is not None:
                                 controlnet_image = init_image
@@ -175,7 +172,7 @@ def process_data():
         pipeline.set_height_width(nheight, nwidth)
         try:
             pipeline.scheduler = sampler_index
-            image = pipeline(
+            img_pil = pipeline(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 init_image=init_image,
@@ -198,7 +195,7 @@ def process_data():
             print(e)
             print("error")
 
-    img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    # img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     if nwidth != width or nheight != height:
         img_pil = img_pil.resize((width, height))
     buffer = io.BytesIO()
@@ -238,7 +235,7 @@ def process_data_img():
     if init_image_b64:
         init_image_b64 = handle_base64_image(init_image_b64)
         init_image_bytes = BytesIO(base64.b64decode(init_image_b64))
-        init_image = cv2.cvtColor(np.array(Image.open(init_image_bytes)), cv2.COLOR_RGB2BGR)
+        init_image = Image.open(init_image_bytes) # cv2.cvtColor(np.array(Image.open(init_image_bytes)), cv2.COLOR_RGB2BGR)
     if init_image_b64 and mask_image_b64:
         mask = BytesIO(base64.b64decode(mask_image_b64))
         mask[mask > 0] = 255
@@ -294,7 +291,7 @@ def process_data_img():
         pipeline.set_height_width(nheight, nwidth)
         try:
             pipeline.scheduler = sampler_index
-            image = pipeline(
+            img_pil = pipeline(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 init_image=init_image,
@@ -318,7 +315,7 @@ def process_data_img():
             print(e)
             print("error")
 
-    img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    # img_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     if nwidth != width or nheight != height:
         img_pil = img_pil.resize((width, height))
     buffer = io.BytesIO()
@@ -363,7 +360,7 @@ def process_upscale():
     if init_image_b64:
         init_image_b64 = handle_base64_image(init_image_b64)
         init_image_bytes = BytesIO(base64.b64decode(init_image_b64))
-        init_image = cv2.cvtColor(np.array(Image.open(init_image_bytes)), cv2.COLOR_RGB2BGR)
+        init_image = Image.open(init_image_bytes) # cv2.cvtColor(np.array(Image.open(init_image_bytes)), cv2.COLOR_RGB2BGR)
     if init_image_b64 and mask_image_b64:
         mask = BytesIO(base64.b64decode(mask_image_b64))
         mask[mask > 0] = 255
@@ -421,7 +418,7 @@ def process_upscale():
                             controlnet_image = handle_base64_image(controlnet_image)
                             controlnet_image = base64.b64decode(controlnet_image)
                             controlnet_image = Image.open(io.BytesIO(controlnet_image))
-                            controlnet_image = np.array(controlnet_image)
+                            # controlnet_image = np.array(controlnet_image)
                         else:
                             if init_image is not None:
                                 controlnet_image = init_image
