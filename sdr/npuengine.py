@@ -23,7 +23,7 @@ class EngineOV:
             print(">>>> device_id: ",device_id)
             print(">>>> sail.Engine error: ",e)
             raise e
-        sail.set_print_flag(True)
+        # sail.set_print_flag(True)
         self.graph_name = self.model.get_graph_names()[0]
         self.input_name = self.model.get_input_names(self.graph_name)
         self.output_name= self.model.get_output_names(self.graph_name)
@@ -42,9 +42,11 @@ class EngineOV:
         for i in range(len(values)):
             args[self.input_name[i]] = values[i]
         # import pdb; pdb.set_trace()
+        # all input dump
         output = self.model.process(self.graph_name, args)
         res = []
-
+        # all output dump
         for name in self.output_name:
             res.append(output[name])
         return res
+        

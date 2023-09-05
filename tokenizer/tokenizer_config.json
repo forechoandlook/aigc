@@ -19,6 +19,7 @@
   },
   "errors": "replace",
   "model_max_length": 77,
+  "name_or_path": "hf-models/stable-diffusion-v2-768x768/tokenizer",
   "pad_token": "<|endoftext|>",
   "special_tokens_map_file": "./special_tokens_map.json",
   "tokenizer_class": "CLIPTokenizer",

@@ -82,17 +82,18 @@ class StableDiffusionPipeline:
             basic_model, extra), device_id=self.device_id)
         print("====================== Load VAE EN in ", time.time()-st_time)
         
-        if controlnet_name:
-            st_time = time.time()
-            self.controlnet = EngineOV("./models/controlnet/{}.bmodel".format(
-                controlnet_name), device_id=self.device_id)
-            print("====================== Load CN in ", time.time()-st_time)
-        else:
-            self.controlnet = None
+        self.controlnet = None
+        # if controlnet_name:
+        #     st_time = time.time()
+        #     self.controlnet = EngineOV("./models/controlnet/{}.bmodel".format(
+        #         controlnet_name), device_id=self.device_id)
+        #     print("====================== Load CN in ", time.time()-st_time)
+        # else:
+        #     self.controlnet = None
         
-        st_time = time.time()
-        self.tile_contorlnet = EngineOV("./models/controlnet/tile_multize.bmodel", device_id=self.device_id)
-        print("====================== Load TILE in ", time.time()-st_time)
+        # st_time = time.time()
+        # self.tile_contorlnet = EngineOV("./models/controlnet/tile_multize.bmodel", device_id=self.device_id)
+        # print("====================== Load TILE in ", time.time()-st_time)
 
         self.unet = self.unet_pure
         self.tile_controlnet_name = "tile_multisize"
@@ -267,6 +268,7 @@ class StableDiffusionPipeline:
         mid_block_additional_residual = controlnet_res[-1]
         res = self.unet([latent.astype(np.float32), t, text_embedding,
                         mid_block_additional_residual, *down_block_additional_residuals])
+        print(res[0].mean())
         return res
 
     def call_back_method(self):
@@ -537,7 +539,11 @@ class StableDiffusionPipeline:
         else:
             parsed = [[line, 1.0]]
 
-        tokenized = self.tokenizer([text for text, _ in parsed]).input_ids
+        tokenized = self.tokenizer([text for text, _ in parsed],
+                                   padding=False, # caution 此处不padding只截断
+                                   max_length=self.tokenizer.model_max_length,
+                                   truncation=False,
+                                   add_special_tokens=False).input_ids
 
         chunks = []
         chunk = PromptChunk()
@@ -564,6 +570,9 @@ class StableDiffusionPipeline:
 
             chunk.tokens = [id_start] + chunk.tokens + [id_end]
             chunk.multipliers = [1.0] + chunk.multipliers + [1.0]
+            # chunk.tokens = chunk.tokens+[id_end]+[id_end]
+            # chunk.multipliers =chunk.multipliers + [1.0]+[1.0]
+
 
             last_comma = -1
             chunks.append(chunk)
@@ -602,23 +611,6 @@ class StableDiffusionPipeline:
                 chunk.tokens.append(token)
                 chunk.multipliers.append(weight)
                 position += 1
-
-                # embedding, embedding_length_in_tokens = None, None # self.hijack.embedding_db.find_embedding_at_position(tokens, position) text inversion
-                # if embedding is None:
-                #     chunk.tokens.append(token)
-                #     chunk.multipliers.append(weight)
-                #     position += 1
-                #     continue
-
-                # emb_len = int(embedding.vec.shape[0])
-                # if len(chunk.tokens) + emb_len > 75: # self.chunk_length:
-                #     next_chunk()
-
-                # chunk.fixes.append(PromptChunkFix(len(chunk.tokens), embedding))
-
-                # chunk.tokens += [0] * emb_len
-                # chunk.multipliers += [weight] * emb_len
-                # position += embedding_length_in_tokens
 
         if chunk.tokens or not chunks:
             next_chunk(is_last=True)
@@ -667,16 +659,8 @@ class StableDiffusionPipeline:
             Multipliers are used to give more or less weight to the outputs of transformers network. Each multiplier
             corresponds to one token.
             """
-            # tokens = torch.asarray(remade_batch_tokens)
-
-            # this is for SD2: SD1 uses the same token for padding and end of text, while SD2 uses different ones.
-            # if id_end != id_pad:
-            #     for batch_pos in range(len(remade_batch_tokens)):
-            #         index = remade_batch_tokens[batch_pos].index(self.id_end)
-            #         tokens[batch_pos, index+1:tokens.shape[1]] = self.id_pad
 
             z = self.text_encoder({"tokens": np.array(remade_batch_tokens, dtype=np.int32)})[0] ## tokens shape [1,77]
-            # pooled = getattr(z, 'pooled', None)
 
             # restoring original mean is likely not correct, but it seems to work well to prevent artifacts that happen otherwise
             batch_multipliers = np.array(batch_multipliers)
@@ -684,9 +668,6 @@ class StableDiffusionPipeline:
             z = z * batch_multipliers.reshape(batch_multipliers.shape + (1,)).repeat(z.shape[0], axis=1)
             new_mean = np.mean(z)
             z = z * (original_mean / new_mean)
-
-            # if pooled is not None:
-            #     z.pooled = pooled
 
             return z
 
@@ -745,6 +726,16 @@ class StableDiffusionPipeline:
             if negative_prompt is None:
                 negative_prompt = ""
         uncond_embeddings = self.tokenizer_forward([negative_prompt])
+        # 确保shape正确，填充或截断到77
+        if uncond_embeddings.shape[1] > 77:
+            uncond_embeddings = uncond_embeddings[:, :77]
+        elif uncond_embeddings.shape[1] < 77:
+            uncond_embeddings = np.pad(uncond_embeddings, ((0, 0), (0, 77 - uncond_embeddings.shape[1])), mode='constant', constant_values=0)
+
+        if text_embeddings.shape[1] > 77:
+            text_embeddings = text_embeddings[:, :77]
+        elif text_embeddings.shape[1] < 77:
+            text_embeddings = np.pad(text_embeddings, ((0, 0), (0, 77 - text_embeddings.shape[1])), mode='constant', constant_values=0)
         text_embeddings = np.concatenate((uncond_embeddings, text_embeddings), axis=0)
         
         # controlnet image prepare
@@ -770,6 +761,8 @@ class StableDiffusionPipeline:
         
         # handle latents
         shape = self.latent_shape
+        # import pdb;pdb.set_trace()
+        # 这里是生成随机数的地方 直接看这个函数 而且这个函数没有任何依赖
         latents = create_random_tensors(shape, seeds, subseeds=subseeds, subseed_strength=subseed_strength,
                                         seed_resize_from_h=seed_resize_from_h, seed_resize_from_w=seed_resize_from_w)
         

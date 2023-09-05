@@ -10,16 +10,59 @@ from tqdm.auto import trange, tqdm
 from diffusers import DDIMScheduler
 import inspect
 import numpy as np
+
+diffusers_scheduler_config = {
+    'DDIM': {
+        'beta_end':0.012,
+        'beta_schedule':'scaled_linear',
+        'beta_start':0.00085,
+        'num_train_timesteps':1000,
+        # 'steps_offset':1, ### for debug with early-version diffusers
+        'clip_sample':False,
+        'set_alpha_to_one':False
+    },
+    'DPM Solver++':{
+        "_class_name": "DPMSolverMultistepScheduler",
+        "_diffusers_version": "0.20.0.dev0",
+        "algorithm_type": "dpmsolver++",
+        "beta_end": 0.012,
+        "beta_schedule": "scaled_linear",
+        "beta_start": 0.00085,
+        #   "clip_sample": False,
+        "dynamic_thresholding_ratio": 0.995,
+        "lambda_min_clipped": -1e20,
+        "lower_order_final": True,
+        "num_train_timesteps": 1000,
+        "prediction_type": "v_prediction",
+        "sample_max_value": 1.0,
+        #   "set_alpha_to_one": False,
+        #   "skip_prk_steps": True,
+        "solver_order": 2,
+        "solver_type": "midpoint",
+        "steps_offset": 1,
+        "thresholding": False,
+        "timestep_spacing": "linspace",
+        "trained_betas": None,
+        "use_karras_sigmas": False,
+        "variance_type": None
+    },
+    'Euler D':{
+        "_class_name": "EulerDiscreteScheduler",
+        "_diffusers_version": "0.20.0.dev0",
+        "beta_end": 0.012,
+        "beta_schedule": "scaled_linear",
+        "beta_start": 0.00085,
+        "interpolation_type": "linear",
+        "num_train_timesteps": 1000,
+        "prediction_type": "epsilon",
+        "steps_offset": 1,
+        "timestep_spacing": "leading",
+        "use_karras_sigmas": False
+    }
+}
+
 # UniPC TODO 额外的调度器添加 可以更短时间内生成更优的图片 
-wrap = DDIMScheduler(
-    beta_end=0.012,
-    beta_schedule="scaled_linear",
-    beta_start=0.00085,
-    num_train_timesteps=1000,
-    # steps_offset=1,
-    clip_sample=False,
-    set_alpha_to_one=False,
-)
+ddim_scheduler = DDIMScheduler(**(diffusers_scheduler_config['DDIM']))
 
 class DiscreteSchedule(nn.Module):
     """A mapping between continuous noise levels (sigmas) and a list of discrete noise
@@ -103,7 +146,7 @@ class DiscreteEpsDDPMDenoiser(DiscreteSchedule):
         return input + eps * c_out
 
 # TODO 后续优化
-alphas_cumprod = wrap.alphas_cumprod
+alphas_cumprod = ddim_scheduler.alphas_cumprod
 sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
 
 wrap_ds = DiscreteSchedule(sigmas, quantize=True)
@@ -749,7 +792,6 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
 # sample_dpmpp_2m_sde -> model -> denoised  这里面的extra_args特别重要，不然会出很多bug
 def model_runner( discreteEpsDDPMDenoiser, guidance_scale, x, sigmas, mask=None, using_paint=False,  **extra_args):
     sigmas = torch.tensor([sigmas, sigmas])
-    # x [1,4,64,64] -> [2,4,64,64]
     x = torch.cat([x, x], dim=0)
     output = discreteEpsDDPMDenoiser(x, sigmas, **extra_args)# TODO 这一个是最麻烦的 搞定完这个就可以了
     init_latents_proper = extra_args['init_latents_proper']
@@ -874,7 +916,7 @@ def sample(steps, x,
         sigmas = get_sigmas(steps,config)
         x = x * sigmas[0]
         last_latent = x
-    alphas_cumprod = wrap.alphas_cumprod
+    alphas_cumprod = ddim_scheduler.alphas_cumprod
     parameters = inspect.signature(func).parameters
     extra_params_kwargs = dict()
     model_params = dict()
@@ -888,7 +930,6 @@ def sample(steps, x,
     if 'sigma_min' in parameters:
         extra_params_kwargs['sigma_min'] = wrap_ds.sigmas[0].item()
         extra_params_kwargs['sigma_max'] = wrap_ds.sigmas[-1].item()
-    
     model_partical_fn = model_partical_fn
     discreteEpsDDPMDenoiser = DiscreteEpsDDPMDenoiser(model_partical_fn, alphas_cumprod, True)# 如何配置model部分 TODO 
     partical_model = partial(model_runner,discreteEpsDDPMDenoiser, guidance_scale)
